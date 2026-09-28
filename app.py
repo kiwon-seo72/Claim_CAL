@@ -94,3 +94,7 @@ try:
     if "case_id" not in st.session_state:
         st.session_state.case_id = cases[0][0] if cases else None
     if "page" not in st.session_state:
+        st.session_state.page = PAGES[0]
+except Exception as exc:
+    st.error(f"초기화 중 오류가 발생했습니다: {exc}")
+    st.stop()
