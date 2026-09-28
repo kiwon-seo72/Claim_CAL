@@ -6,61 +6,36 @@ import csv
 import io
 import json
 import os
-import sqlite3
 from datetime import date, datetime
 from html import escape
-from pathlib import Path
 
 import streamlit as st
+from storage import initialize, list_cases, create_case, save_case, add_document, list_documents, get_document, save_analysis
+from analysis import MAX_BYTES, extract_text, analyze_document
 
 
 st.set_page_config(page_title="보상 분석 | Case Workspace", page_icon="📋", layout="wide")
-DB = Path(os.environ.get("HOME", "/tmp")) / "claim_cases.sqlite3"
-DEFAULT_ROWS = [
-    {"담보 항목": "골절진단비", "상태": "가능", "판정 사유": "진단서·영상 소견 확인 필요", "예상액(만원)": 300, "확정성": "예시"},
-    {"담보 항목": "상해수술비", "상태": "가능", "판정 사유": "수술 기록 확인 필요", "예상액(만원)": 800, "확정성": "예시"},
-    {"담보 항목": "후유장해", "상태": "검토", "판정 사유": "장해율·약관 지급조건 평가 필요", "예상액(만원)": 1500, "확정성": "가정"},
-    {"담보 항목": "입원일당", "상태": "가능", "판정 사유": "10일 × 5만원 가정", "예상액(만원)": 50, "확정성": "예시"},
-    {"담보 항목": "실손", "상태": "별도", "판정 사유": "원본 영수증·세부내역서 확인", "예상액(만원)": 0, "확정성": "미산정"},
-]
 PAGES = ["대시보드", "문서 업로드", "보장 분석", "예상 보험금", "진행 관리", "리포트"]
 
 
-def connect():
-    con = sqlite3.connect(DB, check_same_thread=False)
-    con.execute("""CREATE TABLE IF NOT EXISTS cases
-        (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-         injury TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL,
-         rows_json TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '')""")
-    con.commit()
-    return con
+def require_access():
+    password = os.getenv("APP_PASSWORD")
+    if not password:
+        st.error("APP_PASSWORD를 설정해야 문서와 케이스를 사용할 수 있습니다.")
+        st.stop()
+    if st.session_state.get("authorized"):
+        return
+    import hmac
+    entered = st.text_input("접근 비밀번호", type="password")
+    if st.button("로그인"):
+        if hmac.compare_digest(entered, password):
+            st.session_state.authorized = True
+            st.rerun()
+        st.error("비밀번호가 일치하지 않습니다.")
+    st.stop()
 
 
-def list_cases():
-    with connect() as con:
-        return con.execute("SELECT id, name, injury, status, created_at, rows_json, notes FROM cases ORDER BY id DESC").fetchall()
-
-
-def create_case(name, injury):
-    with connect() as con:
-        cur = con.execute(
-            "INSERT INTO cases(name,injury,status,created_at,rows_json,notes) VALUES(?,?,?,?,?,?)",
-            (name, injury, "접수", datetime.now().strftime("%Y-%m-%d %H:%M"), json.dumps(DEFAULT_ROWS, ensure_ascii=False), ""),
-        )
-        con.commit()
-        return cur.lastrowid
-
-
-def save_case(case_id, *, rows=None, status=None, notes=None):
-    with connect() as con:
-        if rows is not None:
-            con.execute("UPDATE cases SET rows_json=? WHERE id=?", (json.dumps(rows, ensure_ascii=False), case_id))
-        if status is not None:
-            con.execute("UPDATE cases SET status=? WHERE id=?", (status, case_id))
-        if notes is not None:
-            con.execute("UPDATE cases SET notes=? WHERE id=?", (notes, case_id))
-        con.commit()
-
+require_access()
 
 def money(value):
     try:
@@ -111,15 +86,13 @@ with st.sidebar:
             st.session_state.page = page_name
             st.rerun()
     st.divider()
-    st.caption("저장 위치: 이 앱과 같은 폴더의 claim_cases.sqlite3")
+    st.caption("저장 위치: PostgreSQL")
 
 try:
+    initialize()
     cases = list_cases()
     if "case_id" not in st.session_state:
-        if not cases:
-            create_case("홍길동 (예시)", "상완 주관절 손상")
-            cases = list_cases()
-        st.session_state.case_id = cases[0][0]
+        st.session_state.case_id = cases[0][0] if cases else None
     if "page" not in st.session_state:
         st.session_state.page = "대시보드"
 except Exception as e:
@@ -131,9 +104,9 @@ st.markdown('<div class="hero"><div class="eyebrow" style="color:#9ac8ff">CASE W
 select_col, new_col = st.columns([2, 1])
 with select_col:
     ids = [x[0] for x in cases]
-    current_id = st.session_state.case_id if st.session_state.case_id in ids else ids[0]
+    current_id = st.session_state.case_id if st.session_state.case_id in ids else (ids[0] if ids else None)
     labels = {x[0]: f"Case #{x[0]:04d}  |  {x[1]}  |  {x[2]}" for x in cases}
-    picked = st.selectbox("케이스 선택", ids, index=ids.index(current_id), format_func=lambda x: labels[x])
+    picked = st.selectbox("케이스 선택", ids, index=ids.index(current_id) if ids else None, format_func=lambda x: labels[x])
     if picked != st.session_state.case_id:
         st.session_state.case_id = picked
         st.rerun()
@@ -150,13 +123,16 @@ with new_col:
                 else:
                     st.warning("고객명과 사고·상병을 입력하세요.")
 
+if not cases:
+    st.info("새 케이스를 만든 뒤 문서를 접수하세요.")
+    st.stop()
 case = next(x for x in cases if x[0] == st.session_state.case_id)
 case_id, name, injury, status, created_at, rows_json, notes = case
 rows = json.loads(rows_json)
 possible = sum(1 for r in rows if r.get("상태") == "가능")
 needs_review = sum(1 for r in rows if r.get("상태") == "검토")
 estimate = sum(max(float(r.get("예상액(만원)") or 0), 0) for r in rows if r.get("상태") in ("가능", "검토"))
-st.markdown(f'<div class="notice"><b>Case #{case_id:04d} | {escape(injury)}</b>　·　상태: {escape(status)}　·　접수: {escape(created_at)}<br>이 화면의 기본 보장 항목과 금액은 제안서 5쪽의 시연 예시입니다. 문서 업로드만으로 자동 판정되지는 않습니다.</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="notice"><b>Case #{case_id:04d} | {escape(injury)}</b>　·　상태: {escape(status)}　·　접수: {escape(created_at)}<br>AI 추출 결과는 참고자료이며 담보·약관·의무기록을 대조해 직접 검토해야 합니다.</div>', unsafe_allow_html=True)
 page = st.session_state.page
 
 if page == "대시보드":
@@ -172,13 +148,44 @@ if page == "대시보드":
         st.info("① 후유장해: 전문의 소견과 장해율 자료 확인\n\n② 상해수술비: 수술 기록 확인\n\n③ 실손: 영수증과 세부내역서 수합")
 
 elif page == "문서 업로드":
-    st.subheader("문서 접수")
-    st.write("보험증권, 약관, 진단서, 수술기록, 영수증을 첨부해 접수 현황을 확인합니다.")
-    uploads = st.file_uploader("문서 선택", type=["pdf","png","jpg","jpeg"], accept_multiple_files=True, key=f"upload_{case_id}")
-    if uploads:
-        st.success(f"현재 브라우저 세션에 {len(uploads)}개 문서가 선택되어 있습니다.")
-        st.dataframe([{"파일명": f.name, "크기(KB)": round(f.size/1024, 1)} for f in uploads], hide_index=True)
-    st.caption("시제품은 파일을 서버에 보관하거나 OCR·약관 분석을 실행하지 않습니다. 다른 케이스를 열면 해당 케이스의 선택 상태만 표시됩니다.")
+    st.subheader("문서 접수 및 AI 사실 추출")
+    st.caption("PDF의 텍스트 또는 JPG/PNG 이미지를 분석합니다. 파일당 최대 10MB. 문서 원본은 PostgreSQL에 저장됩니다.")
+    uploads = st.file_uploader("문서 선택", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_{case_id}")
+    if uploads and st.button("선택한 문서 저장", type="primary"):
+        count = 0
+        for f in uploads:
+            content = f.getvalue()
+            mime = "application/pdf" if f.name.lower().endswith(".pdf") else ("image/png" if f.name.lower().endswith(".png") else "image/jpeg")
+            if not content or len(content) > MAX_BYTES:
+                st.warning(f"{f.name}: 파일 크기를 확인하세요 (최대 10MB).")
+                continue
+            try:
+                extracted = extract_text(content, mime)
+                add_document(case_id, f.name, mime, content, extracted)
+                count += 1
+            except Exception as exc:
+                st.error(f"{f.name}: 저장 실패 ({exc})")
+        if count:
+            st.success(f"{count}개 문서를 저장했습니다.")
+            st.rerun()
+    for doc in list_documents(case_id):
+        with st.expander(f"{doc['filename']} · {doc['size'] / 1024:.0f} KB · #{doc['id']}"):
+            full = get_document(case_id, doc['id'])
+            st.download_button("원본 다운로드", bytes(full['content']), file_name=doc['filename'], mime=doc['mime_type'], key=f"dl_{doc['id']}")
+            if st.button("AI 분석", key=f"ai_{doc['id']}"):
+                try:
+                    with st.spinner("문서 확인 중..."):
+                        result = analyze_document(full)
+                        save_analysis(case_id, doc['id'], result)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"분석 실패: {exc}")
+            if doc['analysis']:
+                result = json.loads(doc['analysis'])
+                st.json(result)
+                st.caption("분석 결과는 검토표에 자동으로 반영되지 않습니다. 근거와 가입 시점 약관을 확인한 뒤 직접 입력하세요.")
+            elif doc['mime_type'] == 'application/pdf' and not doc['text_length']:
+                st.warning("스캔 PDF에서 텍스트를 추출하지 못했습니다. 이미지 파일로 올려 분석하세요.")
 
 elif page == "보장 분석":
     st.subheader("담보별 검토표")
@@ -200,7 +207,7 @@ elif page == "예상 보험금":
     included = [r for r in rows if r.get("상태") in ("가능","검토")]
     st.dataframe(included, hide_index=True, width='stretch')
     st.metric("검토 대상 금액 합계", money(estimate))
-    st.caption("제안서 5쪽의 기본 예시 2,650만원(300+800+1,500+50)을 표시합니다. 제안서 6쪽의 2,150만원은 장해율 10%와 후유장해 1,000만원을 둔 별도 가정입니다.")
+    st.caption("검토표에 직접 입력한 금액만 합산합니다.")
 
 elif page == "진행 관리":
     st.subheader("케이스 진행")
