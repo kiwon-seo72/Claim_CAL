@@ -124,11 +124,19 @@ with new_col:
                     st.warning("고객명과 사고·상병을 입력하세요.")
 
 if not cases:
-    st.info("새 케이스를 만든 뒤 문서를 접수하세요.")
+
+try:
+    initialize()
+    cases = list_cases()
+    if "case_id" not in st.session_state:
+        st.session_state.case_id = cases[0][0] if cases else None  # ← 이 줄 수정
+    if "page" not in st.session_state:
+        st.session_state.page = "대시보드"
+except Exception as e:
+    st.error(f"초기화 오류: {str(e)}")
     st.stop()
-case = next((x for x in cases if x[0] == st.session_state.case_id), None)
-if case is None:
-    st.warning("선택한 케이스를 찾을 수 없어 첫 번째 케이스로 이동합니다.")
+    
+  
     st.session_state.case_id = cases[0][0]
     case = cases[0]
 case_id, name, injury, status, created_at, rows_json, notes = case
