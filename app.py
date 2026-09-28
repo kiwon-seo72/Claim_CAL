@@ -26,6 +26,7 @@ DEFAULT_ROWS = [
 PAGES = ["대시보드", "문서 업로드", "보장 분석", "예상 보험금", "진행 관리", "리포트"]
 
 
+@st.cache_resource
 def connect():
     con = sqlite3.connect(DB)
     con.execute("""CREATE TABLE IF NOT EXISTS cases
@@ -113,12 +114,18 @@ with st.sidebar:
     st.divider()
     st.caption("저장 위치: 이 앱과 같은 폴더의 claim_cases.sqlite3")
 
-cases = list_cases()
-if "case_id" not in st.session_state:
-    st.session_state.case_id = cases[0][0] if cases else create_case("홍길동 (예시)", "상완 주관절 손상")
+try:
     cases = list_cases()
-if "page" not in st.session_state:
-    st.session_state.page = "대시보드"
+    if "case_id" not in st.session_state:
+        if not cases:
+            create_case("홍길동 (예시)", "상완 주관절 손상")
+            cases = list_cases()
+        st.session_state.case_id = cases[0][0]
+    if "page" not in st.session_state:
+        st.session_state.page = "대시보드"
+except Exception as e:
+    st.error(f"초기화 오류: {str(e)}")
+    st.stop()
 
 st.markdown('<div class="hero"><div class="eyebrow" style="color:#9ac8ff">CASE WORKSPACE</div><h1>보험금을 찾아주는 시스템</h1><p>문서 접수 → 보장 분석 → 예상액 검토 → 진행 관리 → 리포트</p></div>', unsafe_allow_html=True)
 
