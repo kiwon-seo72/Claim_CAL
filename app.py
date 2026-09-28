@@ -26,9 +26,8 @@ DEFAULT_ROWS = [
 PAGES = ["대시보드", "문서 업로드", "보장 분석", "예상 보험금", "진행 관리", "리포트"]
 
 
-@st.cache_resource
 def connect():
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(DB, check_same_thread=False)
     con.execute("""CREATE TABLE IF NOT EXISTS cases
         (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
          injury TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -108,7 +107,7 @@ st.markdown("""
 with st.sidebar:
     st.markdown('<div class="brand">◈ CLAIM WORKSPACE</div><div class="subbrand">AI 손해사정 플랫폼 · 시제품</div>', unsafe_allow_html=True)
     for page_name in PAGES:
-        if st.button(page_name, key=f"nav_{page_name}", use_container_width=True):
+        if st.button(page_name, key=f"nav_{page_name}", width='stretch'):
             st.session_state.page = page_name
             st.rerun()
     st.divider()
@@ -167,7 +166,7 @@ if page == "대시보드":
     left, right = st.columns([2,1],gap="large")
     with left:
         st.subheader("보장 항목 요약")
-        st.dataframe(rows, hide_index=True, use_container_width=True)
+        st.dataframe(rows, hide_index=True, width='stretch')
     with right:
         st.subheader("추천 확인 사항")
         st.info("① 후유장해: 전문의 소견과 장해율 자료 확인\n\n② 상해수술비: 수술 기록 확인\n\n③ 실손: 영수증과 세부내역서 수합")
@@ -184,7 +183,7 @@ elif page == "문서 업로드":
 elif page == "보장 분석":
     st.subheader("담보별 검토표")
     st.write("상태와 예상액을 직접 수정하고 저장하면 케이스에 반영됩니다. '가능'도 지급 확정을 의미하지 않습니다.")
-    edited = st.data_editor(rows, num_rows="dynamic", hide_index=True, use_container_width=True,
+    edited = st.data_editor(rows, num_rows="dynamic", hide_index=True, width='stretch',
         column_config={"상태": st.column_config.SelectboxColumn("상태", options=["가능","검토","별도","제외"], required=True),
                        "예상액(만원)": st.column_config.NumberColumn("예상액(만원)", min_value=0, step=10),
                        "확정성": st.column_config.SelectboxColumn("확정성", options=["예시","가정","미산정","자료확인"], required=True)},
@@ -199,7 +198,7 @@ elif page == "예상 보험금":
     st.subheader("예상액 구성")
     st.warning("아래 금액은 입력된 담보와 가정에 따른 합계입니다. 보험증권·약관·의료자료를 검토한 실제 지급 예상액이 아닙니다.")
     included = [r for r in rows if r.get("상태") in ("가능","검토")]
-    st.dataframe(included, hide_index=True, use_container_width=True)
+    st.dataframe(included, hide_index=True, width='stretch')
     st.metric("검토 대상 금액 합계", money(estimate))
     st.caption("제안서 5쪽의 기본 예시 2,650만원(300+800+1,500+50)을 표시합니다. 제안서 6쪽의 2,150만원은 장해율 10%와 후유장해 1,000만원을 둔 별도 가정입니다.")
 
@@ -217,7 +216,7 @@ elif page == "진행 관리":
 elif page == "리포트":
     st.subheader("케이스 리포트")
     st.write(f"**고객:** {name}　　**사고·상병:** {injury}　　**진행:** {status}")
-    st.dataframe(rows, hide_index=True, use_container_width=True)
+    st.dataframe(rows, hide_index=True, width='stretch')
     st.write(f"**검토 대상 금액 합계:** {money(estimate)}")
     st.write(f"**담당자 메모:** {notes or '입력 없음'}")
     st.caption("예상액은 시연용 가정이며 실제 보험금 지급 여부와 금액은 약관 및 증빙 심사에 따릅니다.")
