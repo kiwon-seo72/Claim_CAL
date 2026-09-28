@@ -1,4 +1,4 @@
-"""AI 손해사정 플랫폼 화면 시제품. 실행: streamlit run claim_platform_app.py"""
+"""AI 손해사정 플랫폼 화면 시제품. 실행: streamlit run app.py"""
 
 from __future__ import annotations
 
