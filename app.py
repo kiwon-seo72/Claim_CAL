@@ -126,7 +126,11 @@ with new_col:
 if not cases:
     st.info("새 케이스를 만든 뒤 문서를 접수하세요.")
     st.stop()
-case = next(x for x in cases if x[0] == st.session_state.case_id)
+case = next((x for x in cases if x[0] == st.session_state.case_id), None)
+if case is None:
+    st.warning("선택한 케이스를 찾을 수 없어 첫 번째 케이스로 이동합니다.")
+    st.session_state.case_id = cases[0][0]
+    case = cases[0]
 case_id, name, injury, status, created_at, rows_json, notes = case
 rows = json.loads(rows_json)
 possible = sum(1 for r in rows if r.get("상태") == "가능")
