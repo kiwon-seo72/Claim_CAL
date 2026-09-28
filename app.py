@@ -128,14 +128,13 @@ if not cases:
 try:
     initialize()
     cases = list_cases()
-    if "case_id" not in st.session_state:
-        st.session_state.case_id = cases[0][0] if cases else None  # ← 이 줄 수정
-    if "page" not in st.session_state:
-        st.session_state.page = "대시보드"
+if "case_id" not in st.session_state:
+    st.session_state.case_id = cases[0][0] if cases else None  # ← 이 줄 수정
+if "page" not in st.session_state:
+    st.session_state.page = "대시보드"
 except Exception as e:
     st.error(f"초기화 오류: {str(e)}")
-    st.stop()
-    
+    st.stop() 
   
     st.session_state.case_id = cases[0][0]
     case = cases[0]
