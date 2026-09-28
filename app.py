@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sqlite3
 from datetime import date, datetime
 from html import escape
@@ -14,7 +15,7 @@ import streamlit as st
 
 
 st.set_page_config(page_title="보상 분석 | Case Workspace", page_icon="📋", layout="wide")
-DB = Path(__file__).with_name("claim_cases.sqlite3")
+DB = Path(os.environ.get("HOME", "/tmp")) / "claim_cases.sqlite3"
 DEFAULT_ROWS = [
     {"담보 항목": "골절진단비", "상태": "가능", "판정 사유": "진단서·영상 소견 확인 필요", "예상액(만원)": 300, "확정성": "예시"},
     {"담보 항목": "상해수술비", "상태": "가능", "판정 사유": "수술 기록 확인 필요", "예상액(만원)": 800, "확정성": "예시"},
