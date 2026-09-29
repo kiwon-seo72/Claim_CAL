@@ -88,6 +88,7 @@ with st.sidebar:
     st.divider()
     st.caption("저장 위치: PostgreSQL")
 
+cases = []
 try:
     initialize()
     cases = list_cases()
