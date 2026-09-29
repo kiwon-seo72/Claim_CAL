@@ -14,7 +14,7 @@ from storage import initialize, list_cases, create_case, save_case, add_document
 from analysis import MAX_BYTES, extract_text, analyze_document
 
 
-st.set_page_config(page_title="보상 분석 | Case Workspace", page_icon="📋", layout="wide")
+st.set_page_config(page_title="보상 분석 | Case Workspace", page_icon="📋", layout="wide", initial_sidebar_state="expanded")
 PAGES = ["대시보드", "문서 업로드", "보장 분석", "예상 보험금", "진행 관리", "리포트"]
 
 
