@@ -10,7 +10,7 @@ from datetime import date, datetime
 from html import escape
 
 import streamlit as st
-from storage import initialize, list_cases, create_case, save_case, add_document, list_documents, get_document, save_analysis
+from storage import initialize, authenticate, active_user, list_cases, create_case, save_case, add_document, list_documents, get_document, save_analysis
 from analysis import MAX_BYTES, extract_text, analyze_document
 
 
@@ -26,23 +26,30 @@ DEFAULT_ROWS = [
 
 
 def require_access():
-    password = os.getenv("APP_PASSWORD")
-    if not password:
-        st.error("APP_PASSWORD를 설정해야 문서와 케이스를 사용할 수 있습니다.")
+    try:
+        initialize()
+    except Exception as exc:
+        st.error(f"초기화 오류: {exc}")
         st.stop()
-    if st.session_state.get("authorized"):
-        return
-    import hmac
-    entered = st.text_input("접근 비밀번호", type="password")
-    if st.button("로그인"):
-        if hmac.compare_digest(entered, password):
-            st.session_state.authorized = True
+    if st.session_state.get("user_id"):
+        if active_user(st.session_state.user_id, st.session_state.get("username", "")):
+            return st.session_state.user_id
+        st.session_state.clear()
+    with st.form("login"):
+        username = st.text_input("사용자명")
+        password = st.text_input("비밀번호", type="password")
+        submitted = st.form_submit_button("로그인", type="primary")
+    if submitted:
+        user = authenticate(username, password)
+        if user:
+            st.session_state.clear()
+            st.session_state.user_id, st.session_state.username = user
             st.rerun()
-        st.error("비밀번호가 일치하지 않습니다.")
+        st.error("사용자명 또는 비밀번호를 확인하세요.")
     st.stop()
 
 
-require_access()
+user_id = require_access()
 
 def money(value):
     try:
@@ -93,12 +100,15 @@ with st.sidebar:
             st.session_state.page = page_name
             st.rerun()
     st.divider()
+    st.caption(f"접속 계정: {st.session_state.username}")
+    if st.button("로그아웃", width="stretch"):
+        st.session_state.clear()
+        st.rerun()
     st.caption("저장 위치: PostgreSQL")
 
 cases = []
 try:
-    initialize()
-    cases = list_cases()
+    cases = list_cases(user_id)
     if "case_id" not in st.session_state:
         st.session_state.case_id = cases[0][0] if cases else None
     if "page" not in st.session_state:
@@ -126,7 +136,7 @@ with new_col:
             use_demo_rows = st.checkbox("app2 예시 담보 5종 채우기 (시연용)", value=False)
             if st.form_submit_button("케이스 만들기"):
                 if new_name.strip() and new_injury.strip():
-                    st.session_state.case_id = create_case(new_name.strip(), new_injury.strip(), rows=DEFAULT_ROWS if use_demo_rows else None)
+                    st.session_state.case_id = create_case(user_id, new_name.strip(), new_injury.strip(), rows=DEFAULT_ROWS if use_demo_rows else None)
                     st.session_state.page = "대시보드"
                     st.rerun()
                 else:
@@ -180,16 +190,16 @@ elif page == "문서 업로드":
                 continue
             try:
                 extracted = extract_text(content, mime)
-                add_document(case_id, f.name, mime, content, extracted)
+                add_document(user_id, case_id, f.name, mime, content, extracted)
                 count += 1
             except Exception as exc:
                 st.error(f"{f.name}: 저장 실패 ({exc})")
         if count:
             st.success(f"{count}개 문서를 저장했습니다.")
             st.rerun()
-    for doc in list_documents(case_id):
+    for doc in list_documents(user_id, case_id):
         with st.expander(f"{doc['filename']} · {doc['size'] / 1024:.0f} KB · #{doc['id']}"):
-            full = get_document(case_id, doc['id'])
+            full = get_document(user_id, case_id, doc['id'])
             st.download_button("원본 다운로드", bytes(full['content']), file_name=doc['filename'], mime=doc['mime_type'], key=f"dl_{doc['id']}")
             if not os.getenv("OPENAI_API_KEY"):
                 st.caption("AI 분석을 사용하려면 Railway의 Claim_CAL 서비스에 OPENAI_API_KEY를 설정하세요.")
@@ -197,7 +207,7 @@ elif page == "문서 업로드":
                 try:
                     with st.spinner("문서 확인 중..."):
                         result = analyze_document(full)
-                        save_analysis(case_id, doc['id'], result)
+                        save_analysis(user_id, case_id, doc['id'], result)
                     st.rerun()
                 except Exception as exc:
                     st.error(f"분석 실패: {exc}")
@@ -218,7 +228,7 @@ elif page == "보장 분석":
         key=f"editor_{case_id}")
     if st.button("검토표 저장", type="primary"):
         cleaned = [r for r in edited if (r.get("담보 항목") or "").strip()]
-        save_case(case_id, rows=cleaned)
+        save_case(user_id, case_id, rows=cleaned)
         st.success("검토표를 저장했습니다.")
         st.rerun()
 
@@ -237,7 +247,7 @@ elif page == "진행 관리":
         new_status = st.selectbox("진행 상태", options, index=options.index(status) if status in options else 0)
         new_notes = st.text_area("담당자 메모 / 추가 서류", value=notes, height=180)
         if st.form_submit_button("진행 내용 저장", type="primary"):
-            save_case(case_id, status=new_status, notes=new_notes)
+            save_case(user_id, case_id, status=new_status, notes=new_notes)
             st.success("진행 내용을 저장했습니다.")
             st.rerun()
 
