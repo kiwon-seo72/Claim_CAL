@@ -97,19 +97,20 @@ def list_cases():
         return [tuple(row) for row in result]
 
 
-def create_case(name, injury):
+def create_case(name, injury, *, rows=None):
     engine = get_engine()
     with engine.begin() as db:
         return db.execute(
             text("""
                 INSERT INTO cases(name, injury, status, created_at, rows_json, notes)
-                VALUES(:name, :injury, '접수', :created_at, '[]', '')
+                VALUES(:name, :injury, '접수', :created_at, :rows_json, '')
                 RETURNING id
             """),
             {
                 "name": name,
                 "injury": injury,
                 "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                "rows_json": json.dumps(rows if rows is not None else [], ensure_ascii=False),
             },
         ).scalar_one()
 
