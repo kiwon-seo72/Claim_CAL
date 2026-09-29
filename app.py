@@ -16,6 +16,13 @@ from analysis import MAX_BYTES, extract_text, analyze_document
 
 st.set_page_config(page_title="보상 분석 | Case Workspace", page_icon="📋", layout="wide", initial_sidebar_state="expanded")
 PAGES = ["대시보드", "문서 업로드", "보장 분석", "예상 보험금", "진행 관리", "리포트"]
+DEFAULT_ROWS = [
+    {"담보 항목": "골절진단비", "상태": "가능", "판정 사유": "진단서·영상 소견 확인 필요", "예상액(만원)": 300, "확정성": "예시"},
+    {"담보 항목": "상해수술비", "상태": "가능", "판정 사유": "수술 기록 확인 필요", "예상액(만원)": 800, "확정성": "예시"},
+    {"담보 항목": "후유장해", "상태": "검토", "판정 사유": "장해율·약관 지급조건 평가 필요", "예상액(만원)": 1500, "확정성": "가정"},
+    {"담보 항목": "입원일당", "상태": "가능", "판정 사유": "10일 × 5만원 가정", "예상액(만원)": 50, "확정성": "예시"},
+    {"담보 항목": "실손", "상태": "별도", "판정 사유": "원본 영수증·세부내역서 확인", "예상액(만원)": 0, "확정성": "미산정"},
+]
 
 
 def require_access():
@@ -116,9 +123,10 @@ with new_col:
         with st.form("create_case_form"):
             new_name = st.text_input("고객명")
             new_injury = st.text_input("사고·상병")
+            use_demo_rows = st.checkbox("app2 예시 담보 5종 채우기 (시연용)", value=False)
             if st.form_submit_button("케이스 만들기"):
                 if new_name.strip() and new_injury.strip():
-                    st.session_state.case_id = create_case(new_name.strip(), new_injury.strip())
+                    st.session_state.case_id = create_case(new_name.strip(), new_injury.strip(), rows=DEFAULT_ROWS if use_demo_rows else None)
                     st.session_state.page = "대시보드"
                     st.rerun()
                 else:
@@ -159,6 +167,9 @@ elif page == "문서 업로드":
     st.subheader("문서 접수 및 AI 사실 추출")
     st.caption("PDF의 텍스트 또는 JPG/PNG 이미지를 분석합니다. 파일당 최대 10MB. 문서 원본은 PostgreSQL에 저장됩니다.")
     uploads = st.file_uploader("문서 선택", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_{case_id}")
+    if uploads:
+        st.write(f"선택한 문서 {len(uploads)}개")
+        st.dataframe([{"파일명": f.name, "크기(KB)": round(f.size / 1024, 1)} for f in uploads], hide_index=True, width="stretch")
     if uploads and st.button("선택한 문서 저장", type="primary"):
         count = 0
         for f in uploads:
@@ -217,7 +228,7 @@ elif page == "예상 보험금":
     included = [r for r in rows if r.get("상태") in ("가능","검토")]
     st.dataframe(included, hide_index=True, width='stretch')
     st.metric("검토 대상 금액 합계", money(estimate))
-    st.caption("검토표에 직접 입력한 금액만 합산합니다.")
+    st.caption("검토표에 직접 입력한 금액만 합산합니다. app2 예시 담보를 선택한 경우 기본 합계는 2,650만원이며 실제 지급 예상액이 아닙니다.")
 
 elif page == "진행 관리":
     st.subheader("케이스 진행")
