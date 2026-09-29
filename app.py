@@ -125,7 +125,9 @@ with new_col:
                     st.warning("고객명과 사고·상병을 입력하세요.")
 
 if not cases:
-    st.info("등록된 케이스가 없습니다. 상단의 '+ 새 케이스'에서 첫 케이스를 생성하세요.")
+    current_page = st.session_state.page
+    st.subheader(current_page)
+    st.info("등록된 케이스가 없습니다. 상단의 '+ 새 케이스'에서 첫 케이스를 생성하면 이 화면의 기능을 사용할 수 있습니다.")
     st.stop()
 
 case_id = st.session_state.case_id
@@ -178,7 +180,9 @@ elif page == "문서 업로드":
         with st.expander(f"{doc['filename']} · {doc['size'] / 1024:.0f} KB · #{doc['id']}"):
             full = get_document(case_id, doc['id'])
             st.download_button("원본 다운로드", bytes(full['content']), file_name=doc['filename'], mime=doc['mime_type'], key=f"dl_{doc['id']}")
-            if st.button("AI 분석", key=f"ai_{doc['id']}"):
+            if not os.getenv("OPENAI_API_KEY"):
+                st.caption("AI 분석을 사용하려면 Railway의 Claim_CAL 서비스에 OPENAI_API_KEY를 설정하세요.")
+            if st.button("AI 분석", key=f"ai_{doc['id']}", disabled=not bool(os.getenv("OPENAI_API_KEY"))):
                 try:
                     with st.spinner("문서 확인 중..."):
                         result = analyze_document(full)
